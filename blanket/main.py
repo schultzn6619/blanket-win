@@ -206,6 +206,11 @@ class Application(Adw.Application):
                 Settings.get().playing and not Settings.get().start_paused
             )
 
+            from blanket import smoke
+
+            if smoke.enabled():
+                smoke.SmokeTest(self).start()
+
         self.window.props.hide_on_close = Settings.get().background
 
         if self.window_hidden:
