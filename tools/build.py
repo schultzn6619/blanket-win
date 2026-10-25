@@ -32,6 +32,7 @@ DATA_DIR = BUILD / "data"
 
 RESOURCES = ROOT / "data" / "resources"
 SCHEMA = ROOT / "data" / "com.rafaelmardojai.Blanket.gschema.xml"
+ICON = ROOT / "data" / "blanket.ico"
 PO_DIR = ROOT / "po"
 GETTEXT_PACKAGE = "blanket"
 
@@ -92,10 +93,17 @@ def compile_resources():
         + [
             f"--sourcedir={UI_DIR}",
             f"--sourcedir={RESOURCES}",
+            f"--sourcedir={ROOT / 'data'}",  # App icon
             f"--target={DATA_DIR / 'blanket.gresource'}",
             RESOURCES / "blanket.gresource.xml",
         ]
     )
+
+
+def copy_icon():
+    print("Copying Windows icon")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ICON, DATA_DIR / ICON.name)
 
 
 def compile_schemas():
@@ -179,6 +187,7 @@ def main() -> int:
 
         compile_blueprints()
         compile_resources()
+        copy_icon()
         compile_schemas()
         compile_translations()
     except BuildError as error:

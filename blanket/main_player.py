@@ -3,10 +3,11 @@
 
 from typing import TYPE_CHECKING, Iterator, Self
 
-from gi.repository import Gio, GLib, GObject, Gst, GstAudio, Gtk
+from gi.repository import Gio, GLib, GObject, Gst, GstAudio
 
 from blanket.preset import Preset
 from blanket.settings import Settings
+from blanket.system.power import SuspendInhibitor
 
 if TYPE_CHECKING:
     from blanket.sound import Sound
@@ -20,7 +21,6 @@ class MainPlayer(GObject.GObject, Gio.ListModel):
     """
 
     _instance = None
-    _cookie = 0
     _sounds: list["Sound"] = []  # Sound list
 
     __gtype_name__ = "MainPlayer"
@@ -41,6 +41,7 @@ class MainPlayer(GObject.GObject, Gio.ListModel):
 
     def __init__(self):
         super().__init__()
+        self._inhibitor = SuspendInhibitor()
         self.connect("notify::playing", self._on_playing)
         Settings.get().connect("preset-changed", self._on_preset_changed)
         Settings.get().connect(
@@ -316,21 +317,10 @@ class MainPlayer(GObject.GObject, Gio.ListModel):
         """
         Set suspension inhibition
         """
-        app: Gtk.Application | None = Gtk.Application.get_default()  # type: ignore
-
-        if not app:
-            return
-
         if inhibit:
-            if self._cookie:
-                return
-
-            self._cookie = app.inhibit(
-                None, Gtk.ApplicationInhibitFlags.SUSPEND, "Playback in progress"
-            )
-        elif self._cookie != 0:
-            app.uninhibit(self._cookie)
-            self._cookie = 0
+            self._inhibitor.inhibit("Playback in progress")
+        else:
+            self._inhibitor.uninhibit()
 
     def _on_playing(self, _player, _param):
         """

@@ -21,3 +21,10 @@ _build/
 
 # Local data build
 build/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Windows bundle
+dist/

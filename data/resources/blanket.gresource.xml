@@ -18,6 +18,8 @@
     <file>style.css</file>
 
     <!-- Icons -->
+    <!-- The app icon is looked up from the theme, which Windows does not have -->
+    <file alias="icons/scalable/apps/com.rafaelmardojai.Blanket.svg">com.rafaelmardojai.Blanket.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/emblems/blanket-rain-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/emblems/blanket-storm-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/emblems/blanket-wind-symbolic.svg</file>

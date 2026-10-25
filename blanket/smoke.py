@@ -1,0 +1,187 @@
+# Copyright 2026 Rafael Mardojai CM
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+"""
+Self test of a built Blanket, run by CI against the Windows executable
+
+Enabled with BLANKET_SMOKE_TEST=<report.json>. Once the window is up, it
+checks the bundled GStreamer plugins, plays a few sounds through the real
+pipeline, opens the dialogs, writes what it found to the report and quits.
+A bundle missing a plugin or a resource fails here instead of on a user's
+machine.
+
+BLANKET_SMOKE_TEST_HOLD keeps the window up that many extra seconds, so CI
+can take a screenshot.
+"""
+
+import json
+import os
+import traceback
+
+from gi.repository import GLib, Gst
+
+from blanket.main_player import MainPlayer
+from blanket.sound import Sound
+from blanket.system import IS_WINDOWS
+
+# Needed for the bundled sounds and noises to play at all
+REQUIRED_ELEMENTS = [
+    "audiomixer",
+    "audioconvert",
+    "audioresample",
+    "volume",
+    "capsfilter",
+    "autoaudiosink",
+    "uridecodebin",
+    "audiotestsrc",
+    "typefind",
+    "oggdemux",
+    "vorbisdec",
+]
+# Needed for custom sounds in the formats the file dialog offers, any of each
+CUSTOM_FORMAT_ELEMENTS = {
+    "flac": ["flacdec"],
+    "wav": ["wavparse"],
+    "mp3": ["mpg123audiodec", "mfmp3dec", "avdec_mp3"],
+    "aac": ["mfaacdec", "avdec_aac", "faad", "fdkaacdec"],
+    "opus": ["opusdec"],
+}
+SOUNDS_TO_PLAY = ["rain", "waves", "white-noise"]
+PLAY_SECONDS = 4
+
+
+def enabled() -> bool:
+    return bool(os.environ.get("BLANKET_SMOKE_TEST"))
+
+
+class SmokeTest:
+    def __init__(self, app):
+        self.app = app
+        self.report: dict = {"ok": False, "checks": {}, "errors": []}
+        self.report_path = os.environ["BLANKET_SMOKE_TEST"]
+        self.hold = int(os.environ.get("BLANKET_SMOKE_TEST_HOLD", "0"))
+
+    def start(self):
+        # Give the window time to map and the pipeline to settle
+        GLib.timeout_add_seconds(2, self._step_play)
+
+    def _check(self, name: str, passed: bool, detail=None):
+        self.report["checks"][name] = {"passed": bool(passed), "detail": detail}
+
+    def _guard(self, step):
+        try:
+            step()
+        except Exception:
+            self.report["errors"].append(traceback.format_exc())
+            self._finish()
+            return False
+        return True
+
+    def _step_play(self):
+        def step():
+            self._check_elements()
+            self._check_window()
+
+            player = MainPlayer.get()
+            for sound in player:
+                if isinstance(sound, Sound) and sound.name in SOUNDS_TO_PLAY:
+                    sound.playing = True
+                    sound.saved_volume = 0.5
+            player.playing = True
+
+            GLib.timeout_add_seconds(PLAY_SECONDS, self._step_check_playback)
+
+        self._guard(step)
+        return GLib.SOURCE_REMOVE
+
+    def _step_check_playback(self):
+        def step():
+            player = MainPlayer.get()
+            _ret, state, _pending = player.pipeline.get_state(Gst.SECOND)
+            self._check(
+                "pipeline-playing",
+                state == Gst.State.PLAYING,
+                Gst.Element.state_get_name(state),
+            )
+
+            running = player.mixer.get_current_running_time()
+            self._check(
+                "mixer-advancing",
+                running != Gst.CLOCK_TIME_NONE and running > Gst.SECOND,
+                running,
+            )
+
+            failed = [s.name for s in player if isinstance(s, Sound) and s.failed]
+            self._check("no-failed-sounds", not failed, failed)
+
+            # Dialogs build from the bundled UI files
+            for action in ("preferences", "about", "shortcuts"):
+                self.app.activate_action(action, None)
+            self._check("dialogs-opened", True)
+
+            if IS_WINDOWS:
+                tray = self.app.tray
+                self._check(
+                    "tray-icon", tray is not None and bool(tray._hwnd), None
+                )
+
+            GLib.timeout_add_seconds(max(self.hold, 1), self._step_finish)
+
+        self._guard(step)
+        return GLib.SOURCE_REMOVE
+
+    def _step_finish(self):
+        self._finish()
+        return GLib.SOURCE_REMOVE
+
+    def _check_elements(self):
+        missing = [e for e in REQUIRED_ELEMENTS if Gst.ElementFactory.find(e) is None]
+        self._check("gstreamer-elements", not missing, {"missing": missing})
+
+        source = Gst.Element.make_from_uri(
+            Gst.URIType.SRC, "resource:///com/rafaelmardojai/Blanket/sounds/rain.ogg"
+        )
+        self._check("resource-uri-source", source is not None)
+
+        decoders = {}
+        for name, elements in CUSTOM_FORMAT_ELEMENTS.items():
+            found = [e for e in elements if Gst.ElementFactory.find(e) is not None]
+            decoders[name] = found[0] if found else None
+        self._check(
+            "custom-format-decoders", all(decoders.values()), decoders
+        )
+
+        sink = Gst.ElementFactory.make("autoaudiosink", None)
+        self.report["audio-sinks"] = [
+            f.get_name()
+            for f in Gst.Registry.get().get_feature_list(Gst.ElementFactory)
+            if "Sink/Audio" in (f.get_metadata("klass") or "")
+        ]
+        self._check("autoaudiosink", sink is not None)
+
+    def _check_window(self):
+        window = self.app.window
+        self._check(
+            "window-mapped",
+            window is not None and window.get_mapped(),
+            None if window is None else [window.get_width(), window.get_height()],
+        )
+        self._check(
+            "sounds-loaded",
+            MainPlayer.get().get_n_items() >= 14,
+            MainPlayer.get().get_n_items(),
+        )
+
+    def _finish(self):
+        checks = self.report["checks"]
+        self.report["ok"] = (
+            not self.report["errors"]
+            and bool(checks)
+            and all(c["passed"] for c in checks.values())
+        )
+        with open(self.report_path, "w", encoding="utf-8") as report:
+            json.dump(self.report, report, indent=2, default=str)
+
+        print(f"Smoke test {'passed' if self.report['ok'] else 'FAILED'}")
+        self.app.quit()
+
