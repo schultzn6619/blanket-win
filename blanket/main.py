@@ -123,7 +123,11 @@ class Application(Adw.Application):
 
         icon = paths.data_dir() / "blanket.ico"
         self.tray = TrayIcon(
-            str(icon), _("Blanket"), self._on_tray_activate, self._tray_menu
+            str(icon),
+            _("Blanket"),
+            self._on_tray_activate,
+            self._tray_menu,
+            self.quit,
         )
         self.tray.start()
 

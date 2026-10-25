@@ -11,6 +11,7 @@ runs, and its tray window is asked to show the app instead.
 
 import ctypes
 import time
+from ctypes import wintypes
 
 from blanket.define import APP_ID
 from blanket.system.windows import win32
@@ -24,6 +25,8 @@ def acquire() -> bool:
     """Claim the instance, False if another Blanket already holds it"""
     global _mutex
 
+    # Only an existing mutex sets the error, make sure no stale one remains
+    ctypes.set_last_error(0)
     _mutex = win32.CreateMutexW(None, False, f"Local\\{APP_ID}")
     already_running = ctypes.get_last_error() == win32.ERROR_ALREADY_EXISTS
 
@@ -45,7 +48,7 @@ def activate_running_instance(timeout: float = 5.0) -> bool:
         hwnd = win32.FindWindowW(WINDOW_CLASS, None)
         if hwnd:
             # We were launched by the user, so we may hand them the focus
-            pid = win32.wintypes.DWORD()
+            pid = wintypes.DWORD()
             win32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
             win32.AllowSetForegroundWindow(pid.value or win32.ASFW_ANY)
 

@@ -32,6 +32,9 @@ WM_ACTIVATE_INSTANCE = win32.WM_APP + 2
 
 TRAY_ICON_ID = 1
 
+# How long logoff (or an installer) waits for Blanket to save its state
+END_SESSION_TIMEOUT = 5
+
 
 @dataclass
 class TrayMenuItem:
@@ -48,16 +51,21 @@ class TrayIcon:
         tooltip: str,
         on_activate: Callable[[], None],
         build_menu: Callable[[], list[TrayMenuItem]],
+        on_end_session: Callable[[], None],
     ):
         """
         on_activate is called when the icon is clicked or another instance
-        asks to be shown. build_menu returns the context menu entries. Both
+        asks to be shown. build_menu returns the context menu entries.
+        on_end_session is called when Windows logs off or an installer asks
+        Blanket to close; it should quit, which calls stop(). All of them
         run on the GTK main loop.
         """
         self._icon_path = icon_path
         self._tooltip = tooltip
         self._on_activate = on_activate
         self._build_menu = build_menu
+        self._on_end_session = on_end_session
+        self._stopping = threading.Event()
 
         # The menu is built on the GTK thread and read by the tray thread
         self._menu_items: list[TrayMenuItem] = []
@@ -80,6 +88,8 @@ class TrayIcon:
         self._started.wait(timeout=5)
 
     def stop(self):
+        # Releases a pending WM_ENDSESSION, see _window_proc
+        self._stopping.set()
         if self._hwnd:
             win32.PostMessageW(self._hwnd, win32.WM_CLOSE, 0, 0)
         if self._thread is not None:
@@ -204,6 +214,17 @@ class TrayIcon:
                 GLib.idle_add(self._activate)
                 return 0
 
+            if msg == win32.WM_QUERYENDSESSION:
+                return 1  # Fine by us
+
+            if msg == win32.WM_ENDSESSION:
+                if wparam:
+                    # Windows may end the process as soon as this returns, so
+                    # wait for the app to save and shut down
+                    GLib.idle_add(self._end_session)
+                    self._stopping.wait(timeout=END_SESSION_TIMEOUT)
+                return 0
+
             if msg == self._taskbar_created and self._taskbar_created:
                 self._add_icon()
                 return 0
@@ -284,6 +305,10 @@ class TrayIcon:
 
     def _activate(self):
         self._on_activate()
+        return GLib.SOURCE_REMOVE
+
+    def _end_session(self):
+        self._on_end_session()
         return GLib.SOURCE_REMOVE
 
     def _call(self, callback: Callable[[], None]):
