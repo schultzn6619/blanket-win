@@ -5,8 +5,6 @@
 Blanket entry point, used by ``python -m blanket`` and the Windows executable
 """
 
-import gettext
-import locale
 import os
 import signal
 import sys
@@ -14,6 +12,11 @@ import sys
 
 def run() -> int:
     from blanket import paths
+    from blanket.system import IS_WINDOWS
+
+    if IS_WINDOWS:
+        if not _windows_startup():
+            return 0  # Handed over to the instance already running
 
     if not paths.resource_file().exists():
         print(
@@ -29,6 +32,9 @@ def run() -> int:
     os.environ["GSETTINGS_SCHEMA_DIR"] = os.pathsep.join(schema_dirs)
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+    from blanket.system.i18n import setup_translations
+
     setup_translations(str(paths.locale_dir()))
 
     from gi.repository import Gio
@@ -42,21 +48,24 @@ def run() -> int:
     return main.main()
 
 
-def setup_translations(localedir: str):
-    from blanket.paths import GETTEXT_PACKAGE
+def _windows_startup() -> bool:
+    """
+    Windows specific setup, False when Blanket should not start after all
+    """
+    from blanket.define import APP_ID
+    from blanket.system import windows
+    from blanket.system.windows import instance, win32
 
-    gettext.install(GETTEXT_PACKAGE, localedir)
+    windows.redirect_output_to_log()
 
-    try:
-        locale.bindtextdomain(GETTEXT_PACKAGE, localedir)
-        locale.textdomain(GETTEXT_PACKAGE)
-    except Exception:
-        print("Cannot set locale.")
-    try:
-        gettext.bindtextdomain(GETTEXT_PACKAGE, localedir)
-        gettext.textdomain(GETTEXT_PACKAGE)
-    except Exception:
-        print("Cannot load translations.")
+    if not instance.acquire():
+        # Autostart while already running has nothing to show
+        if "--hidden" not in sys.argv and "-h" not in sys.argv:
+            instance.activate_running_instance()
+        return False
+
+    win32.set_app_user_model_id(APP_ID)
+    return True
 
 
 if __name__ == "__main__":

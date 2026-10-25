@@ -12,8 +12,6 @@ try:
     gi.require_version("Gst", "1.0")
     gi.require_version("GstAudio", "1.0")
     gi.require_version("Gtk", "4.0")
-    gi.require_version("Xdp", "1.0")
-    gi.require_version("XdpGtk4", "1.0")
     from gi.repository import Adw, Gio, GLib, Gst, Gtk
 
     # Init GStreamer
@@ -31,34 +29,45 @@ from blanket.define import (
     SOUND_EDITORS,
     VERSION,
 )
+from blanket import paths
 from blanket.main_player import MainPlayer
-from blanket.mpris import MPRIS
 from blanket.preferences import PreferencesDialog
 from blanket.settings import Settings
 from blanket.sound import Sound
+from blanket.system import IS_WINDOWS
+from blanket.system.power import PowerSaverMonitor
 from blanket.widgets import PresetDialog
 from blanket.widgets.sound_rename_dialog import SoundRenameDialog
 from blanket.window import BlanketWindow
 
+PLAYPAUSE_ACCELS = ["<Ctl>m"]
+
 
 class Application(Adw.Application):
     def __init__(self):
+        flags = Gio.ApplicationFlags.HANDLES_COMMAND_LINE
+        if IS_WINDOWS:
+            # Uniqueness needs a D-Bus session bus, Windows has none.
+            # blanket.system.windows.instance takes care of it instead.
+            flags |= Gio.ApplicationFlags.NON_UNIQUE
+
         super().__init__(
             application_id=APP_ID,
             resource_base_path=RES_PATH,
-            flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
+            flags=flags,
         )
         GLib.set_application_name(_("Blanket"))
-        GLib.setenv(
-            "PULSE_PROP_application.icon_name",
-            "com.rafaelmardojai.Blanket-symbolic",
-            True,
-        )
+        if not IS_WINDOWS:
+            GLib.setenv(
+                "PULSE_PROP_application.icon_name",
+                "com.rafaelmardojai.Blanket-symbolic",
+                True,
+            )
         # Connect app shutdown signal
         self.connect("shutdown", self._on_shutdown)
 
         # Track power status
-        self.power_monitor = Gio.PowerProfileMonitor.dup_default()
+        self.power_monitor = PowerSaverMonitor()
         self.power_monitor.connect(
             "notify::power-saver-enabled", self._on_notify_power_saver_enabled
         )
@@ -75,6 +84,9 @@ class Application(Adw.Application):
         # App window
         self.window: BlanketWindow | None = None
         self.window_hidden = False
+        # Media controls (MPRIS) on Linux, notification area icon on Windows
+        self.mpris = None
+        self.tray = None
         # App version
         self.version = VERSION
 
@@ -91,10 +103,29 @@ class Application(Adw.Application):
         ):
             style_manager.props.color_scheme = Adw.ColorScheme.FORCE_DARK
 
-        # Start MPRIS server
-        self.mpris = MPRIS(self)
+        if IS_WINDOWS:
+            self._start_tray()
+        else:
+            self._start_mpris()
 
         self.setup_actions()
+
+    def _start_mpris(self):
+        try:
+            from blanket.mpris import MPRIS
+
+            self.mpris = MPRIS(self)
+        except GLib.Error as error:
+            print(f"Error: could not start MPRIS: {error.message}")
+
+    def _start_tray(self):
+        from blanket.system.windows.tray import TrayIcon
+
+        icon = paths.data_dir() / "blanket.ico"
+        self.tray = TrayIcon(
+            str(icon), _("Blanket"), self._on_tray_activate, self._tray_menu
+        )
+        self.tray.start()
 
     def setup_actions(self):
         # Quit application
@@ -156,15 +187,24 @@ class Application(Adw.Application):
         # Setup accelerator
         self.set_accels_for_action("app.quit", ["<Ctl>q"])
         self.set_accels_for_action("app.preferences", ["<Ctl>comma"])
-        self.set_accels_for_action("app.playpause", ["<Ctl>m", "space"])
+        self.set_accels_for_action("app.playpause", PLAYPAUSE_ACCELS + ["space"])
         self.set_accels_for_action("app.open", ["<Ctl>o"])
         self.set_accels_for_action("win.close", ["<Ctl>w"])
         self.set_accels_for_action("win.hide-inactive", ["<Ctl>h"])
 
     def do_activate(self):
-        self.window = self.props.active_window  # type: ignore
-        if not self.window:
+        if self.window is None:
             self.window = BlanketWindow(application=self)
+
+            # Connect window close-request signal to _on_window_close_request
+            self.window.connect("close-request", self._on_window_close_request)
+
+            # Load saved props, only once: activating again (from another
+            # launch or the tray) must not undo what happened meanwhile
+            MainPlayer.get().volume = Settings.get().volume
+            MainPlayer.get().playing = (
+                Settings.get().playing and not Settings.get().start_paused
+            )
 
         self.window.props.hide_on_close = Settings.get().background
 
@@ -173,15 +213,6 @@ class Application(Adw.Application):
             self.window_hidden = False
         else:
             self.window.present()
-
-        # Connect window close-request signal to _on_window_close_request
-        self.window.connect("close-request", self._on_window_close_request)
-
-        # Load saved props
-        MainPlayer.get().volume = Settings.get().volume
-        MainPlayer.get().playing = (
-            Settings.get().playing and not Settings.get().start_paused
-        )
 
     def do_command_line(self, command_line):
         options = command_line.get_options_dict()
@@ -271,16 +302,16 @@ class Application(Adw.Application):
         about.present(self.window)
 
     def set_space_accel(self, _action):
-        self.set_accels_for_action("app.playpause", ["<Ctl>m", "space"])
+        self.set_accels_for_action("app.playpause", PLAYPAUSE_ACCELS + ["space"])
 
     def unset_space_accel(self, _action):
-        self.set_accels_for_action("app.playpause", ["<Ctl>m"])
+        self.set_accels_for_action("app.playpause", PLAYPAUSE_ACCELS)
 
     def on_quit(self, _action, _param):
         self.quit()
 
     def _on_notify_power_saver_enabled(self, obj, pspec):
-        if self.power_monitor.get_power_saver_enabled() and MainPlayer.get().playing:
+        if self.power_monitor.power_saver_enabled and MainPlayer.get().playing:
             # Pause playback if the system enters power saver mode, as audio
             # playback uses quite a lot of power. Don’t re-enable it when
             # exiting power saver mode, as that would be jarring for the user.
@@ -308,6 +339,22 @@ class Application(Adw.Application):
     def _on_shutdown(self, _app):
         self._save_settings()
         MainPlayer.get().stop()
+        if self.tray is not None:
+            self.tray.stop()
+
+    def _on_tray_activate(self):
+        self.activate()
+
+    def _tray_menu(self):
+        from blanket.system.windows.tray import TrayMenuItem
+
+        playing = MainPlayer.get().playing
+        return [
+            TrayMenuItem(_("Show Blanket"), self.activate, default=True),
+            TrayMenuItem(_("Pause") if playing else _("Play"), self.on_playpause),
+            TrayMenuItem(""),
+            TrayMenuItem(_("Quit"), self.quit),
+        ]
 
     def __get_credits_list(self, dict_):
         credits_list = []
