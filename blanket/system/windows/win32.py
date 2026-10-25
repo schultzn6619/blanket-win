@@ -220,7 +220,9 @@ LoadImageW = _declare(
     ctypes.c_int,
     wintypes.UINT,
 )
-LoadIconW = _declare(user32.LoadIconW, wintypes.HICON, wintypes.HINSTANCE, wintypes.LPVOID)
+LoadIconW = _declare(
+    user32.LoadIconW, wintypes.HICON, wintypes.HINSTANCE, wintypes.LPVOID
+)
 DestroyIcon = _declare(user32.DestroyIcon, wintypes.BOOL, wintypes.HICON)
 CreatePopupMenu = _declare(user32.CreatePopupMenu, wintypes.HMENU)
 AppendMenuW = _declare(
@@ -232,7 +234,11 @@ AppendMenuW = _declare(
     wintypes.LPCWSTR,
 )
 SetMenuDefaultItem = _declare(
-    user32.SetMenuDefaultItem, wintypes.BOOL, wintypes.HMENU, wintypes.UINT, wintypes.UINT
+    user32.SetMenuDefaultItem,
+    wintypes.BOOL,
+    wintypes.HMENU,
+    wintypes.UINT,
+    wintypes.UINT,
 )
 TrackPopupMenu = _declare(
     user32.TrackPopupMenu,
@@ -248,7 +254,9 @@ TrackPopupMenu = _declare(
 DestroyMenu = _declare(user32.DestroyMenu, wintypes.BOOL, wintypes.HMENU)
 
 # kernel32
-GetModuleHandleW = _declare(kernel32.GetModuleHandleW, wintypes.HMODULE, wintypes.LPCWSTR)
+GetModuleHandleW = _declare(
+    kernel32.GetModuleHandleW, wintypes.HMODULE, wintypes.LPCWSTR
+)
 CreateMutexW = _declare(
     kernel32.CreateMutexW,
     wintypes.HANDLE,

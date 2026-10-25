@@ -117,9 +117,7 @@ class SmokeTest:
 
             if IS_WINDOWS:
                 tray = self.app.tray
-                self._check(
-                    "tray-icon", tray is not None and bool(tray._hwnd), None
-                )
+                self._check("tray-icon", tray is not None and bool(tray._hwnd), None)
 
             self._mark("main")
             GLib.timeout_add_seconds(max(self.hold, 1), self._step_dialogs)
@@ -161,9 +159,7 @@ class SmokeTest:
         for name, elements in CUSTOM_FORMAT_ELEMENTS.items():
             found = [e for e in elements if Gst.ElementFactory.find(e) is not None]
             decoders[name] = found[0] if found else None
-        self._check(
-            "custom-format-decoders", all(decoders.values()), decoders
-        )
+        self._check("custom-format-decoders", all(decoders.values()), decoders)
 
         sink = Gst.ElementFactory.make("autoaudiosink", None)
         self.report["audio-sinks"] = [
@@ -198,4 +194,3 @@ class SmokeTest:
 
         print(f"Smoke test {'passed' if self.report['ok'] else 'FAILED'}")
         self.app.quit()
-
