@@ -1,0 +1,182 @@
+name: Windows
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, test and package
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-python-gobject
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-libadwaita
+            mingw-w64-ucrt-x86_64-adwaita-icon-theme
+            mingw-w64-ucrt-x86_64-librsvg
+            mingw-w64-ucrt-x86_64-gstreamer
+            mingw-w64-ucrt-x86_64-gst-plugins-base
+            mingw-w64-ucrt-x86_64-gst-plugins-good
+            mingw-w64-ucrt-x86_64-gst-plugins-bad
+            mingw-w64-ucrt-x86_64-glib2
+            mingw-w64-ucrt-x86_64-blueprint-compiler
+            mingw-w64-ucrt-x86_64-gettext-tools
+            mingw-w64-ucrt-x86_64-libxml2
+            mingw-w64-ucrt-x86_64-pyinstaller
+            mingw-w64-ucrt-x86_64-pyinstaller-hooks-contrib
+
+      - name: Show versions
+        run: |
+          python --version
+          pacman -Q mingw-w64-ucrt-x86_64-{gtk4,libadwaita,gstreamer,python-gobject,pyinstaller}
+          VERSION=$(python -c "import re; print(re.search(r'^VERSION = \"([^\"]+)\"', open('blanket/define.py').read(), re.M).group(1))")
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Blanket $VERSION"
+
+      - name: Check the tag matches the version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          if [ "${GITHUB_REF_NAME#v}" != "$VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match blanket/define.py version $VERSION"
+            exit 1
+          fi
+
+      - name: Build data files
+        run: python tools/build.py --clean
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -t . -v
+
+      - name: Bundle with PyInstaller
+        run: pyinstaller --noconfirm --clean packaging/windows/blanket.spec
+
+      - name: Smoke test the bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          New-Item -ItemType Directory -Force smoke | Out-Null
+          $report = Join-Path $PWD "smoke\report.json"
+
+          function Save-Screenshot($path) {
+            $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+            $bitmap.Save($path)
+            $graphics.Dispose(); $bitmap.Dispose()
+          }
+
+          function Wait-For($path, $seconds) {
+            $deadline = (Get-Date).AddSeconds($seconds)
+            while (-not (Test-Path $path)) {
+              if ((Get-Date) -gt $deadline) { return $false }
+              Start-Sleep -Milliseconds 250
+            }
+            return $true
+          }
+
+          $env:BLANKET_SMOKE_TEST = $report
+          $env:BLANKET_SMOKE_TEST_HOLD = "4"
+          $process = Start-Process -FilePath "dist\Blanket\Blanket.exe" -PassThru
+
+          if (Wait-For "$report.main" 120) { Start-Sleep 1; Save-Screenshot "smoke\main.png" }
+          if (Wait-For "$report.dialogs" 30) { Start-Sleep 1; Save-Screenshot "smoke\dialogs.png" }
+
+          if (-not $process.WaitForExit(60000)) {
+            Save-Screenshot "smoke\stuck.png"
+            Stop-Process $process -Force
+            Write-Host "::error::Blanket did not exit"
+          }
+
+          $log = Join-Path $env:LOCALAPPDATA "Blanket\blanket.log"
+          if (Test-Path $log) {
+            Copy-Item $log smoke\blanket.log
+            Write-Host "--- blanket.log"; Get-Content $log
+          }
+
+          if (-not (Test-Path $report)) { throw "No smoke test report was written" }
+          Write-Host "--- report"; Get-Content $report
+          if (-not (Get-Content $report | ConvertFrom-Json).ok) { throw "Smoke test failed" }
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+          }
+          & $iscc /DAppVersion=$env:VERSION packaging\windows\blanket.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+
+      - name: Portable archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\Blanket -DestinationPath "dist\Blanket-$env:VERSION-windows-x64.zip"
+          Get-ChildItem dist -File | Format-Table Name, Length
+
+      - name: Test the installer
+        shell: pwsh
+        run: |
+          $setup = "dist\Blanket-$env:VERSION-setup.exe"
+          Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/CURRENTUSER", "/LOG=installer.log" -Wait
+          $installed = Join-Path $env:LOCALAPPDATA "Programs\Blanket\Blanket.exe"
+          if (-not (Test-Path $installed)) { Get-Content installer.log; throw "Blanket.exe was not installed" }
+          $uninstaller = Join-Path $env:LOCALAPPDATA "Programs\Blanket\unins000.exe"
+          Start-Process $uninstaller -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES" -Wait
+          Start-Sleep 2
+          if (Test-Path $installed) { throw "Blanket.exe was not uninstalled" }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-test
+          path: smoke/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Blanket-${{ env.VERSION }}-windows
+          path: |
+            dist/Blanket-*-setup.exe
+            dist/Blanket-*-windows-x64.zip
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Blanket-*-windows
+          merge-multiple: true
+          path: dist
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Blanket ${GITHUB_REF_NAME#v} for Windows" \
+            --generate-notes
