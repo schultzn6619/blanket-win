@@ -2,12 +2,24 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from gettext import gettext as _
+from typing import TypedDict
 
-VERSION = "@VERSION@"
-APP_ID = "@APP_ID@"
+
+class Sound(TypedDict):
+    name: str
+    title: str
+
+
+class SoundCategory(TypedDict):
+    name: str
+    sounds: list[Sound]
+
+
+VERSION = "0.8.0"
+APP_ID = "com.rafaelmardojai.Blanket"
 RES_PATH = "/com/rafaelmardojai/Blanket"
 
-SOUNDS = [
+SOUNDS: list[SoundCategory] = [
     {
         "name": _("Nature"),
         "sounds": [
@@ -37,16 +49,16 @@ SOUNDS = [
     },
 ]
 
-NOISES = [
+NOISES: list[Sound] = [
     {"name": "pink-noise", "title": _("Pink Noise")},
     {"name": "white-noise", "title": _("White Noise")},
 ]
 
-AUTHORS = ["Rafael Mardojai CM"]
+AUTHORS: list[str] = ["Rafael Mardojai CM"]
 
-ARTISTS = {"Jakub Steiner": [_("Sounds icons")], "Rafael Mardojai CM": [_("App icon")]}
+ARTISTS: dict[str, list[str]] = {"Jakub Steiner": [_("Sounds icons")], "Rafael Mardojai CM": [_("App icon")]}
 
-SOUND_ARTISTS = {
+SOUND_ARTISTS: dict[str, list[str]] = {
     "alex36917": [_("Rain")],
     "Digifish music": [_("Storm")],
     "ezwa": [_("Fireplace")],
@@ -63,7 +75,7 @@ SOUND_ARTISTS = {
     "SDLx": [_("Train")],
 }
 
-SOUND_EDITORS = {
+SOUND_EDITORS: dict[str, list[str]] = {
     "Porrumentzio": [
         _("Birds"),
         _("Rain"),
