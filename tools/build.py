@@ -20,6 +20,7 @@ xmllint and msgfmt (and xgettext for "pot") on the PATH.
 """
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -46,9 +47,18 @@ def find_tool(name: str) -> list[str]:
     Command prefix to run a build tool
 
     On Windows a few of them (blueprint-compiler) are Python scripts without
-    an extension, which cannot be executed directly.
+    an extension, which shutil.which() skips and which cannot be executed
+    directly.
     """
     path = shutil.which(name)
+
+    if path is None and sys.platform == "win32":
+        for directory in os.environ.get("PATH", "").split(os.pathsep):
+            candidate = Path(directory) / name
+            if directory and candidate.is_file():
+                path = str(candidate)
+                break
+
     if path is None:
         raise BuildError(f"{name} was not found on the PATH")
 
@@ -141,7 +151,12 @@ def update_pot():
         if line.strip() and not line.startswith("#")
     ]
     pot = PO_DIR / f"{GETTEXT_PACKAGE}.pot"
-    keywords = ["--keyword=_", "--keyword=N_", "--keyword=C_:1c,2", "--keyword=NC_:1c,2"]
+    keywords = [
+        "--keyword=_",
+        "--keyword=N_",
+        "--keyword=C_:1c,2",
+        "--keyword=NC_:1c,2",
+    ]
     common = [
         "--from-code=UTF-8",
         "--add-comments",
@@ -172,6 +187,9 @@ def update_pot():
 
 
 def main() -> int:
+    # Keep our output in order with the tools' when piped (as in CI)
+    sys.stdout.reconfigure(line_buffering=True)  # type: ignore
+
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("target", nargs="?", choices=["data", "pot"], default="data")
     parser.add_argument("--clean", action="store_true", help="start from scratch")

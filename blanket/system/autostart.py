@@ -12,12 +12,13 @@ Linux: the background portal, through libportal.
 import sys
 from enum import Enum
 from gettext import gettext as _
-from typing import Callable
-
-from gi.repository import Gtk
+from typing import TYPE_CHECKING, Callable
 
 from blanket import paths
 from blanket.system import IS_WINDOWS
+
+if TYPE_CHECKING:
+    from gi.repository import Gtk
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 RUN_VALUE = "Blanket"
@@ -55,7 +56,9 @@ def is_enabled() -> bool | None:
     return windows_command() is not None
 
 
-def request(enabled: bool, parent: Gtk.Window, callback: Callable[[Result], None]):
+def request(
+    enabled: bool, parent: "Gtk.Window | None", callback: Callable[[Result], None]
+):
     """Turn autostart on or off, callback gets the outcome"""
     if IS_WINDOWS:
         try:
@@ -111,7 +114,7 @@ Linux
 
 
 def _request_portal(
-    enabled: bool, parent: Gtk.Window, callback: Callable[[Result], None]
+    enabled: bool, parent: "Gtk.Window | None", callback: Callable[[Result], None]
 ):
     from gi.repository import Xdp
 

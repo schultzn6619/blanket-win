@@ -14,9 +14,8 @@ def run() -> int:
     from blanket import paths
     from blanket.system import IS_WINDOWS
 
-    if IS_WINDOWS:
-        if not _windows_startup():
-            return 0  # Handed over to the instance already running
+    if IS_WINDOWS and not _windows_startup():
+        return 0  # Handed over to the instance already running
 
     if not paths.resource_file().exists():
         print(

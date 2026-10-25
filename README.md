@@ -1,17 +1,13 @@
 <img src="brand/logo.svg" alt="Blanket" width="128" height="128" align="left"/>
 
-# Blanket
+# Blanket for Windows
 
 **Listen to different sounds**
 
 <br>
 
-[![GNMOME Circle](https://gitlab.gnome.org/Teams/Circle/-/raw/master/assets/button/badge.svg)](https://circle.gnome.org/)
-[![Please do not theme this app](https://stopthemingmy.app/badge.svg)](https://stopthemingmy.app)
-
-[![GitHub](https://img.shields.io/github/license/rafaelmardojai/blanket.svg)](https://github.com/rafaelmardojai/blanket/blob/master/COPYING)
-[![Donate](https://img.shields.io/badge/PayPal-Donate-gray.svg?style=flat&logo=paypal&colorA=0071bb&logoColor=fff)](https://paypal.me/RafaelMardojaiCM)
-[![Liberapay](https://img.shields.io/liberapay/receives/rafaelmardojai.svg?logo=liberapay)](https://liberapay.com/rafaelmardojai/donate)
+[![Windows build](https://github.com/schultzn6619/blanket-win/actions/workflows/windows.yml/badge.svg)](https://github.com/schultzn6619/blanket-win/actions/workflows/windows.yml)
+[![License](https://img.shields.io/github/license/schultzn6619/blanket-win.svg)](COPYING)
 
 <p align="center">
   <img src="brand/screenshot-1-dark.png"/>
@@ -20,60 +16,102 @@
 ## Description
 Improve focus and increase your productivity by listening to different sounds. Blanket can also be used to help you to fall asleep in a noisy environment.
 
-## Install
+This is a Windows port of [Blanket](https://github.com/rafaelmardojai/blanket) by Rafael Mardojai CM. It is the same GTK 4 / libadwaita app with the same sounds, packaged as a regular Windows program instead of a Linux/Flathub package.
 
-<a href="https://flathub.org/apps/details/com.rafaelmardojai.Blanket"><img width="200" alt="Download on Flathub" src="https://flathub.org/api/badge?svg&locale=en"/></a>
+## Download
 
-### Third Party Packages 
+Get the latest version from the [Releases page](https://github.com/schultzn6619/blanket-win/releases):
 
-| Distribution | Package | Maintainer |
-|:-:|:-:|:-:|
-| Alpine Linux (edge) | [`blanket`](https://pkgs.alpinelinux.org/packages?name=blanket) | mio |
-| Arch Linux (extra) | [`blanket`](https://archlinux.org/packages/extra/any/blanket/) | [Balló György](https://github.com/City-busz) |
-| Fedora (Copr) | Copr: [`tuxino/Blob`](https://copr.fedorainfracloud.org/coprs/tuxino/Blob/), package: `blanket` | Tuxino |
-| NixOS | [`blanket`](https://search.nixos.org/packages?channel=unstable&show=blanket&from=0&size=50&sort=relevance&type=packages&query=blanket) | onny |
-| openSUSE  | [`blanket`](https://build.opensuse.org/package/show/multimedia%3Aapps/blanket) | [Michael Vetter](https://github.com/jubalh) |
-| Ubuntu (PPA) | [`Stable Releases`](https://launchpad.net/~apandada1/+archive/ubuntu/blanket), [`Daily Builds`](https://launchpad.net/~apandada1/+archive/ubuntu/blanket-daily) | [Archisman Panigrahi](https://github.com/apandada1) |
-| Void Linux | [`blanket`](https://voidlinux.org/packages/?q=blanket) | [ndpm13](https://github.com/ndpm13) |
-| MX Linux | [`blanket`](http://mxrepo.com/mx/repo/pool/main/b/blanket/) | [SwampRabbit](https://github.com/SwampRabbit) |
-| Debian (trixie) | [`blanket`](https://packages.debian.org/en/trixie/blanket) | [Debian GNOME Team](https://salsa.debian.org/gnome-team) |
+- **`Blanket-<version>-setup.exe`**: installer. Installs for the current user without administrator rights (an all-users install is offered too), adds a Start menu shortcut and an uninstaller.
+- **`Blanket-<version>-windows-x64.zip`**: portable copy. Unzip anywhere and run `Blanket.exe`.
 
-### Build from source
+Requires 64-bit Windows 10 or 11.
 
-You can clone and run from GNOME Builder.
+The executables are not code-signed, so Windows SmartScreen may warn the first time you run them: choose *More info → Run anyway*.
 
-#### Requirements
+Builds of every commit are also available as artifacts of the [Windows workflow runs](https://github.com/schultzn6619/blanket-win/actions/workflows/windows.yml).
 
-- Python 3 `python`
-- PyGObject `python-gobject`
-- GTK4 `gtk4`
-- libadwaita (>= 1.5.0) `libadwaita`
-- GStreamer 1.0 `gstreamer`
-- Meson `meson`
-- Ninja `ninja`
+## Using Blanket on Windows
 
-Alternatively, use the following commands to build it with meson.
+Everything from the Linux version works, plus a few Windows touches:
+
+- **Notification area icon**: click it to bring the window back, right-click for Play/Pause and Quit. With *Keep Playing when Closed* (main menu), closing the window leaves the sounds playing there.
+- **Autostart in Background** (Preferences): starts Blanket hidden when you sign in. It shows up in Task Manager's *Startup apps*.
+- **Inhibit suspension while playing** keeps the PC from going to sleep while sounds play.
+- Playback pauses when **battery saver** turns on.
+- Opening Blanket while it already runs brings up the existing window.
+- Custom sounds can be Ogg, Opus, FLAC, WAV, MP3 or AAC/M4A files.
+- The interface follows the Windows display language and light/dark mode.
+
+Settings are kept in the registry under `HKEY_CURRENT_USER\Software\GSettings\com\rafaelmardojai\Blanket`. If something goes wrong, `%LOCALAPPDATA%\Blanket\blanket.log` has the output of the last run. Please attach it to bug reports.
+
+## How it works
+
+Blanket is a Python app using PyGObject, GTK 4, libadwaita and GStreamer. The Windows build bundles all of them:
+
+| Part | Where |
+|:--|:--|
+| App code | `blanket/` |
+| Windows/Linux differences (autostart, sleep inhibition, power saver, translations) | `blanket/system/` |
+| Win32 bits (tray icon, single instance, ctypes bindings) | `blanket/system/windows/` |
+| UI (Blueprint), icons, sounds, settings schema | `data/` |
+| Data build (UI, GResource bundle, schema, translations → `build/data`) | `tools/build.py` |
+| PyInstaller bundle and Inno Setup installer | `packaging/windows/` |
+| CI: build, test, smoke test, package, release | `.github/workflows/windows.yml` |
+
+Every sound plays as a branch of a single GStreamer pipeline feeding an `audiomixer`. Bundled sounds are read from the GResource bundle (`resource://` URIs) and looped with segment seeks, noises are generated by `audiotestsrc`. On Windows, audio goes out through WASAPI.
+
+## Building from source
+
+### On Windows
+
+1. Install [MSYS2](https://www.msys2.org/) and open the **UCRT64** shell.
+2. Install the dependencies:
+   ```bash
+   pacman -S --needed git mingw-w64-ucrt-x86_64-{python,python-gobject,gtk4,libadwaita,adwaita-icon-theme,librsvg,gstreamer,gst-plugins-base,gst-plugins-good,gst-plugins-bad,glib2,blueprint-compiler,gettext-tools,libxml2,pyinstaller,pyinstaller-hooks-contrib}
+   ```
+3. Build the data files and run Blanket from the checkout:
+   ```bash
+   python tools/build.py
+   python -m blanket
+   ```
+4. Optionally, run the tests and build the bundle:
+   ```bash
+   python -m unittest discover -s tests -t . -v
+   pyinstaller --noconfirm --clean packaging/windows/blanket.spec   # → dist/Blanket/Blanket.exe
+   ```
+   The installer is then built with [Inno Setup 6](https://jrsoftware.org/isinfo.php): `iscc /DAppVersion=0.8.0 packaging\windows\blanket.iss`.
+
+### On Linux (for development)
+
+Install Python 3.11+, PyGObject, GTK 4, libadwaita ≥ 1.8, GStreamer (base and good plugins), blueprint-compiler, GLib's development tools, xmllint and gettext, then:
+
 ```bash
-meson builddir --prefix=/usr/local
-sudo ninja -C builddir install
+python3 tools/build.py
+python3 -m blanket
 ```
 
-## Translations
-Blanket is translated into several languages. If your language is missing or incomplete, please help to [translate Blanket in Weblate](https://hosted.weblate.org/engage/blanket/).
+Autostart on Linux uses libportal when it is installed. MPRIS media controls are Linux only.
 
-<a href="https://hosted.weblate.org/engage/blanket/">
-<img src="https://hosted.weblate.org/widget/blanket/blanket/horizontal-auto.svg" alt="Translation status" />
-</a>
+### Checking a build
+
+`BLANKET_SMOKE_TEST=report.json python -m blanket` (or the same variable with `Blanket.exe`) plays a few sounds, opens the dialogs, checks the GStreamer plugins and writes a JSON report before quitting. CI runs it on every bundle.
+
+### Releasing
+
+Bump the version in `blanket/define.py` and `pyproject.toml`, then push a tag `v<version>`. CI builds and tests the installer and zip and publishes them as a GitHub release.
+
+## Translations
+Blanket is translated into several languages. Translations come from the [original project on Weblate](https://hosted.weblate.org/engage/blanket/). `python tools/build.py pot` regenerates the template.
 
 ## Credits
-Developed by **[Rafael Mardojai CM](https://github.com/rafaelmardojai)** and [contributors](https://github.com/rafaelmardojai/blanket/graphs/contributors).
+Blanket is developed by **[Rafael Mardojai CM](https://github.com/rafaelmardojai)** and [contributors](https://github.com/rafaelmardojai/blanket/graphs/contributors).
 
 Thanks to Jorge Toledo for the name idea.
 
-For detailed information about sounds licensing, [check this file](https://github.com/rafaelmardojai/blanket/blob/master/SOUNDS_LICENSING.md).
+For detailed information about sounds licensing, [check this file](SOUNDS_LICENSING.md).
 
-## Donate
-If you want to support my work, you can donate me, [here you can find how](https://rafaelmardojai.com/donate/).
+If you want to support the original author, [here you can find how](https://rafaelmardojai.com/donate/).
 
 ## Related Projects
 - [Blankie](https://github.com/codybrom/blankie) - Native macOS app inspired by Blanket
@@ -82,3 +120,6 @@ If you want to support my work, you can donate me, [here you can find how](https
 - [Blanket Web](https://apps.roanapur.de/blanket/) - Web clone of Blanket
 - [Blanket+](https://apps.microsoft.com/detail/9P4VKD1WQQ9G?hl=neutral&gl=TR&ocid=pdpshare) - Windows version of blanket
 - [Aria](https://github.com/kosail/Aria) - Android and [Web app](https://aria.korealm.dev/) inspired by Blanket. A rewrite built from scratch using Kotlin and Compose Multiplatform.
+
+## License
+GPL-3.0-or-later, see [COPYING](COPYING). The bundled GTK, GStreamer and Python libraries keep their own (LGPL/PSF) licenses.

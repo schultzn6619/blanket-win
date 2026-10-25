@@ -20,6 +20,7 @@ except (ImportError, ValueError) as exc:
     print("Error: Dependencies not met.", exc)
     exit()
 
+from blanket import paths
 from blanket.define import (
     APP_ID,
     ARTISTS,
@@ -29,7 +30,6 @@ from blanket.define import (
     SOUND_EDITORS,
     VERSION,
 )
-from blanket import paths
 from blanket.main_player import MainPlayer
 from blanket.preferences import PreferencesDialog
 from blanket.settings import Settings
@@ -123,7 +123,11 @@ class Application(Adw.Application):
 
         icon = paths.data_dir() / "blanket.ico"
         self.tray = TrayIcon(
-            str(icon), _("Blanket"), self._on_tray_activate, self._tray_menu
+            str(icon),
+            _("Blanket"),
+            self._on_tray_activate,
+            self._tray_menu,
+            self.quit,
         )
         self.tray.start()
 
@@ -300,7 +304,10 @@ class Application(Adw.Application):
         about.set_application_icon(APP_ID)
         about.set_developers(AUTHORS)
         about.set_designers(artists)
-        about.add_link(_("Source Code"), "https://github.com/rafaelmardojai/blanket")
+        about.add_link(_("Source Code"), "https://github.com/schultzn6619/blanket-win")
+        about.add_link(
+            _("Original Project"), "https://github.com/rafaelmardojai/blanket"
+        )
         about.add_credit_section(_("Sounds by"), sound_artists)
         about.add_credit_section(_("Sounds edited by"), sound_editors)
 

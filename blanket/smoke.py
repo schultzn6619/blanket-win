@@ -10,15 +10,22 @@ pipeline, opens the dialogs, writes what it found to the report and quits.
 A bundle missing a plugin or a resource fails here instead of on a user's
 machine.
 
-BLANKET_SMOKE_TEST_HOLD keeps the window up that many extra seconds, so CI
-can take a screenshot.
+BLANKET_SMOKE_TEST_HOLD pauses that many seconds at two points, so CI can
+take screenshots: <report.json>.main is created while the main window plays,
+<report.json>.dialogs once the dialogs are open.
 """
 
 import json
+import math
 import os
+import struct
+import tempfile
 import traceback
+import wave
+from gettext import gettext as _
+from pathlib import Path
 
-from gi.repository import GLib, Gst
+from gi.repository import Gio, GLib, Gst, Gtk
 
 from blanket.main_player import MainPlayer
 from blanket.sound import Sound
@@ -48,6 +55,16 @@ CUSTOM_FORMAT_ELEMENTS = {
 }
 SOUNDS_TO_PLAY = ["rain", "waves", "white-noise"]
 PLAY_SECONDS = 4
+CUSTOM_SOUND = "smoke-test-tone"
+
+# A translatable string as GTK sees it in the UI templates
+TRANSLATION_PROBE = """
+<interface>
+  <object class="GtkLabel" id="label">
+    <property name="label" translatable="yes">Preferences</property>
+  </object>
+</interface>
+"""
 
 
 def enabled() -> bool:
@@ -81,6 +98,8 @@ class SmokeTest:
         def step():
             self._check_elements()
             self._check_window()
+            self._record_translations()
+            self._add_custom_sound()
 
             player = MainPlayer.get()
             for sound in player:
@@ -114,21 +133,39 @@ class SmokeTest:
             failed = [s.name for s in player if isinstance(s, Sound) and s.failed]
             self._check("no-failed-sounds", not failed, failed)
 
-            # Dialogs build from the bundled UI files
-            for action in ("preferences", "about", "shortcuts"):
-                self.app.activate_action(action, None)
-            self._check("dialogs-opened", True)
+            custom, _index = player.get_by_name(CUSTOM_SOUND)
+            self._check(
+                "custom-sound-playing",
+                isinstance(custom, Sound) and custom._player is not None,
+                None if custom is None else custom.uri,
+            )
 
             if IS_WINDOWS:
                 tray = self.app.tray
-                self._check(
-                    "tray-icon", tray is not None and bool(tray._hwnd), None
-                )
+                self._check("tray-icon", tray is not None and bool(tray._hwnd), None)
 
+            self._mark("main")
+            GLib.timeout_add_seconds(max(self.hold, 1), self._step_dialogs)
+
+        self._guard(step)
+        return GLib.SOURCE_REMOVE
+
+    def _step_dialogs(self):
+        def step():
+            # Dialogs build from the bundled UI files
+            for action in ("about", "preferences"):
+                self.app.activate_action(action, None)
+            self._check("dialogs-opened", True)
+
+            self._mark("dialogs")
             GLib.timeout_add_seconds(max(self.hold, 1), self._step_finish)
 
         self._guard(step)
         return GLib.SOURCE_REMOVE
+
+    def _mark(self, stage: str):
+        with open(f"{self.report_path}.{stage}", "w", encoding="utf-8"):
+            pass
 
     def _step_finish(self):
         self._finish()
@@ -147,9 +184,7 @@ class SmokeTest:
         for name, elements in CUSTOM_FORMAT_ELEMENTS.items():
             found = [e for e in elements if Gst.ElementFactory.find(e) is not None]
             decoders[name] = found[0] if found else None
-        self._check(
-            "custom-format-decoders", all(decoders.values()), decoders
-        )
+        self._check("custom-format-decoders", all(decoders.values()), decoders)
 
         sink = Gst.ElementFactory.make("autoaudiosink", None)
         self.report["audio-sinks"] = [
@@ -158,6 +193,49 @@ class SmokeTest:
             if "Sink/Audio" in (f.get_metadata("klass") or "")
         ]
         self._check("autoaudiosink", sink is not None)
+
+    def _record_translations(self):
+        """What a couple of strings translate to, CI compares per language"""
+        builder = Gtk.Builder.new_from_string(TRANSLATION_PROBE, -1)
+        label: Gtk.Label = builder.get_object("label")  # type: ignore
+        self.report["translations"] = {
+            "language": os.environ.get("LANGUAGE"),
+            "python": _("Rain"),
+            "gtk": label.get_label(),
+        }
+
+    def _add_custom_sound(self):
+        """
+        Play a generated WAV file the way a custom sound is played
+
+        It goes through a file:// URI like the ones the file dialog gives,
+        which on Windows carry a drive letter.
+        """
+        path = Path(tempfile.gettempdir()) / f"{CUSTOM_SOUND}.wav"
+        rate = 22050  # Not the mixer rate, so it is resampled too
+        with wave.open(str(path), "wb") as tone:
+            tone.setnchannels(1)
+            tone.setsampwidth(2)
+            tone.setframerate(rate)
+            tone.writeframes(
+                b"".join(
+                    struct.pack("<h", int(4000 * math.sin(2 * math.pi * 440 * i / rate)))
+                    for i in range(rate * 2)
+                )
+            )
+
+        uri = Gio.File.new_for_path(str(path)).get_uri()
+        resolved = Gio.File.new_for_uri(uri).get_path()
+        self._check(
+            "custom-sound-path",
+            resolved is not None and os.path.exists(resolved),
+            [uri, resolved],
+        )
+
+        sound = Sound(CUSTOM_SOUND, uri=uri, custom=True)
+        MainPlayer.get().append(sound)
+        sound.playing = True
+        sound.saved_volume = 0.3
 
     def _check_window(self):
         window = self.app.window
@@ -184,4 +262,3 @@ class SmokeTest:
 
         print(f"Smoke test {'passed' if self.report['ok'] else 'FAILED'}")
         self.app.quit()
-

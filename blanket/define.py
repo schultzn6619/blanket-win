@@ -56,7 +56,10 @@ NOISES: list[Sound] = [
 
 AUTHORS: list[str] = ["Rafael Mardojai CM"]
 
-ARTISTS: dict[str, list[str]] = {"Jakub Steiner": [_("Sounds icons")], "Rafael Mardojai CM": [_("App icon")]}
+ARTISTS: dict[str, list[str]] = {
+    "Jakub Steiner": [_("Sounds icons")],
+    "Rafael Mardojai CM": [_("App icon")],
+}
 
 SOUND_ARTISTS: dict[str, list[str]] = {
     "alex36917": [_("Rain")],
