@@ -16,10 +16,16 @@ take screenshots: <report.json>.main is created while the main window plays,
 """
 
 import json
+import math
 import os
+import struct
+import tempfile
 import traceback
+import wave
+from gettext import gettext as _
+from pathlib import Path
 
-from gi.repository import GLib, Gst
+from gi.repository import Gio, GLib, Gst, Gtk
 
 from blanket.main_player import MainPlayer
 from blanket.sound import Sound
@@ -49,6 +55,16 @@ CUSTOM_FORMAT_ELEMENTS = {
 }
 SOUNDS_TO_PLAY = ["rain", "waves", "white-noise"]
 PLAY_SECONDS = 4
+CUSTOM_SOUND = "smoke-test-tone"
+
+# A translatable string as GTK sees it in the UI templates
+TRANSLATION_PROBE = """
+<interface>
+  <object class="GtkLabel" id="label">
+    <property name="label" translatable="yes">Preferences</property>
+  </object>
+</interface>
+"""
 
 
 def enabled() -> bool:
@@ -82,6 +98,8 @@ class SmokeTest:
         def step():
             self._check_elements()
             self._check_window()
+            self._record_translations()
+            self._add_custom_sound()
 
             player = MainPlayer.get()
             for sound in player:
@@ -114,6 +132,13 @@ class SmokeTest:
 
             failed = [s.name for s in player if isinstance(s, Sound) and s.failed]
             self._check("no-failed-sounds", not failed, failed)
+
+            custom, _index = player.get_by_name(CUSTOM_SOUND)
+            self._check(
+                "custom-sound-playing",
+                isinstance(custom, Sound) and custom._player is not None,
+                None if custom is None else custom.uri,
+            )
 
             if IS_WINDOWS:
                 tray = self.app.tray
@@ -168,6 +193,49 @@ class SmokeTest:
             if "Sink/Audio" in (f.get_metadata("klass") or "")
         ]
         self._check("autoaudiosink", sink is not None)
+
+    def _record_translations(self):
+        """What a couple of strings translate to, CI compares per language"""
+        builder = Gtk.Builder.new_from_string(TRANSLATION_PROBE, -1)
+        label: Gtk.Label = builder.get_object("label")  # type: ignore
+        self.report["translations"] = {
+            "language": os.environ.get("LANGUAGE"),
+            "python": _("Rain"),
+            "gtk": label.get_label(),
+        }
+
+    def _add_custom_sound(self):
+        """
+        Play a generated WAV file the way a custom sound is played
+
+        It goes through a file:// URI like the ones the file dialog gives,
+        which on Windows carry a drive letter.
+        """
+        path = Path(tempfile.gettempdir()) / f"{CUSTOM_SOUND}.wav"
+        rate = 22050  # Not the mixer rate, so it is resampled too
+        with wave.open(str(path), "wb") as tone:
+            tone.setnchannels(1)
+            tone.setsampwidth(2)
+            tone.setframerate(rate)
+            tone.writeframes(
+                b"".join(
+                    struct.pack("<h", int(4000 * math.sin(2 * math.pi * 440 * i / rate)))
+                    for i in range(rate * 2)
+                )
+            )
+
+        uri = Gio.File.new_for_path(str(path)).get_uri()
+        resolved = Gio.File.new_for_uri(uri).get_path()
+        self._check(
+            "custom-sound-path",
+            resolved is not None and os.path.exists(resolved),
+            [uri, resolved],
+        )
+
+        sound = Sound(CUSTOM_SOUND, uri=uri, custom=True)
+        MainPlayer.get().append(sound)
+        sound.playing = True
+        sound.saved_volume = 0.3
 
     def _check_window(self):
         window = self.app.window

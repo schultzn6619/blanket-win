@@ -117,6 +117,25 @@ jobs:
           Write-Host "--- report"; Get-Content $report
           if (-not (Get-Content $report | ConvertFrom-Json).ok) { throw "Smoke test failed" }
 
+      - name: Smoke test the bundle in German
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $report = Join-Path $PWD "smoke\report-de.json"
+          $env:BLANKET_SMOKE_TEST = $report
+          $env:BLANKET_SMOKE_TEST_HOLD = "0"
+          $env:LANGUAGE = "de"
+          $process = Start-Process -FilePath "dist\Blanket\Blanket.exe" -PassThru
+          if (-not $process.WaitForExit(120000)) {
+            Stop-Process $process -Force
+            throw "Blanket did not exit"
+          }
+          $translations = (Get-Content $report | ConvertFrom-Json).translations
+          $translations | Format-List
+          # Python strings go through gettext, UI templates through libintl
+          if ($translations.python -ne "Regen") { throw "Python strings are not translated" }
+          if ($translations.gtk -ne "Einstellungen") { throw "GTK strings are not translated" }
+
       - name: Build installer
         shell: pwsh
         run: |
