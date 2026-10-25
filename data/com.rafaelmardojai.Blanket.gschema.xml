@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <schemalist gettext-domain="blanket">
     <!-- Global Settings -->
-    <schema id="@app-id@" path="/com/rafaelmardojai/Blanket/">
+    <schema id="com.rafaelmardojai.Blanket" path="/com/rafaelmardojai/Blanket/">
         <key type="(iib)" name="window-state">
             <default>(-1, -1, false)</default>
             <summary>Initial state of the window</summary>
@@ -49,7 +49,7 @@
     </schema>
 
     <!-- Preset -->
-    <schema id="@app-id@.preset">
+    <schema id="com.rafaelmardojai.Blanket.preset">
         <key name="visible-name" type="s">
             <!-- Translators: Keep single quote please! -->
             <default l10n="messages" context="visible-name">'Default'</default>

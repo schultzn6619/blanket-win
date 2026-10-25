@@ -1,5 +1,3 @@
-data/com.rafaelmardojai.Blanket.desktop.in
-data/com.rafaelmardojai.Blanket.metainfo.xml.in
 data/com.rafaelmardojai.Blanket.gschema.xml
 data/resources/about.blp
 data/resources/preferences.blp
@@ -15,9 +13,7 @@ data/resources/window.blp
 blanket/define.py
 blanket/main.py
 blanket/main_player.py
-blanket/meson.build
 blanket/mpris.py
-blanket/player.py
 blanket/preferences.py
 blanket/preset.py
 blanket/settings.py

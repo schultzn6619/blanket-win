@@ -1,12 +1,19 @@
 [project]
-name = "Blanket"
+name = "blanket"
 version = "0.8.0"
+description = "Listen to different sounds"
+license = "GPL-3.0-or-later"
 requires-python = ">=3.11"
+# PyGObject, GTK 4, libadwaita and GStreamer come from the system (MSYS2 on
+# Windows), they are not installable from PyPI in a usable form.
 
 [tool.pyright]
 reportMissingModuleSource = false
 reportIncompatibleMethodOverride = false
 typeCheckingMode = "standard"
+
+[tool.ruff]
+extend-exclude = ["build", "dist"]
 
 [dependency-groups]
 dev = [
