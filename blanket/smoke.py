@@ -10,8 +10,9 @@ pipeline, opens the dialogs, writes what it found to the report and quits.
 A bundle missing a plugin or a resource fails here instead of on a user's
 machine.
 
-BLANKET_SMOKE_TEST_HOLD keeps the window up that many extra seconds, so CI
-can take a screenshot.
+BLANKET_SMOKE_TEST_HOLD pauses that many seconds at two points, so CI can
+take screenshots: <report.json>.main is created while the main window plays,
+<report.json>.dialogs once the dialogs are open.
 """
 
 import json
@@ -114,21 +115,34 @@ class SmokeTest:
             failed = [s.name for s in player if isinstance(s, Sound) and s.failed]
             self._check("no-failed-sounds", not failed, failed)
 
-            # Dialogs build from the bundled UI files
-            for action in ("preferences", "about", "shortcuts"):
-                self.app.activate_action(action, None)
-            self._check("dialogs-opened", True)
-
             if IS_WINDOWS:
                 tray = self.app.tray
                 self._check(
                     "tray-icon", tray is not None and bool(tray._hwnd), None
                 )
 
+            self._mark("main")
+            GLib.timeout_add_seconds(max(self.hold, 1), self._step_dialogs)
+
+        self._guard(step)
+        return GLib.SOURCE_REMOVE
+
+    def _step_dialogs(self):
+        def step():
+            # Dialogs build from the bundled UI files
+            for action in ("about", "preferences"):
+                self.app.activate_action(action, None)
+            self._check("dialogs-opened", True)
+
+            self._mark("dialogs")
             GLib.timeout_add_seconds(max(self.hold, 1), self._step_finish)
 
         self._guard(step)
         return GLib.SOURCE_REMOVE
+
+    def _mark(self, stage: str):
+        with open(f"{self.report_path}.{stage}", "w", encoding="utf-8"):
+            pass
 
     def _step_finish(self):
         self._finish()
