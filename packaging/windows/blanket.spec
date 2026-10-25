@@ -10,6 +10,7 @@
 # The result is dist/Blanket/Blanket.exe with everything it needs next to it.
 
 import re
+import sys
 from pathlib import Path
 
 from PyInstaller.utils.win32.versioninfo import (
@@ -28,6 +29,9 @@ ICON = ROOT / "data" / "blanket.ico"
 
 if not (DATA / "blanket.gresource").exists():
     raise SystemExit("build/data is missing, run tools/build.py first")
+
+sys.path.insert(0, SPECPATH)  # noqa: F821
+import trim  # noqa: E402
 
 define = (ROOT / "blanket" / "define.py").read_text(encoding="utf-8")
 VERSION = re.search(r'^VERSION = "([^"]+)"', define, re.MULTILINE).group(1)
@@ -66,6 +70,29 @@ GSTREAMER_PLUGINS = [
     "mediafoundation",  # AAC
 ]
 
+# Modules collected by the GTK hooks that Blanket has no use for; trim.py
+# also drops whatever only they link to
+UNUSED_MODULES = {
+    # gdk-pixbuf loaders for formats Blanket never shows. HEIF alone brings
+    # about 50 MB of video codecs.
+    "libpixbufloader-heif.dll",
+    "libpixbufloader-ani.dll",
+    "libpixbufloader-icns.dll",
+    "libpixbufloader-pnm.dll",
+    "libpixbufloader-qtif.dll",
+    "libpixbufloader-tga.dll",
+    "libpixbufloader-xbm.dll",
+    "libpixbufloader-xpm.dll",
+    "io-wmf.dll",
+    # GIO TLS and proxy support, Blanket does no networking
+    "libgiognutls.dll",
+    "libgioopenssl.dll",
+    "libgiolibproxy.dll",
+}
+# Fonts MSYS2 installed as dependencies; without a fontconfig setup Pango
+# uses the Windows fonts and never reads these
+UNUSED_DATA = ["share/fonts"]
+
 a = Analysis(  # noqa: F821
     [str(ROOT / "packaging" / "windows" / "launcher.py")],
     pathex=[str(ROOT)],
@@ -94,6 +121,11 @@ a = Analysis(  # noqa: F821
     excludes=["tkinter", "test", "pydoc", "gi.repository.Xdp"],
     noarchive=False,
 )
+
+a.binaries, dropped = trim.drop_binaries(a.binaries, UNUSED_MODULES)
+a.datas = trim.drop_datas(a.datas, UNUSED_DATA)
+print(f"Left out of the bundle: {', '.join(dropped)}")
+trim.verify(a.binaries)
 
 pyz = PYZ(a.pure)  # noqa: F821
 
