@@ -3,7 +3,6 @@
 
 import os
 from gettext import gettext as _
-from urllib.parse import unquote, urlparse
 
 from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
@@ -11,6 +10,7 @@ from blanket.define import APP_ID, NOISES, RES_PATH, SOUNDS
 from blanket.main_player import MainPlayer
 from blanket.settings import Settings
 from blanket.sound import Sound
+from blanket.system import IS_WINDOWS
 from blanket.utils import DummyItemModel
 from blanket.widgets import PlayPauseButton, PresetChooser, SoundItem, VolumeRow
 
@@ -133,9 +133,10 @@ class BlanketWindow(Adw.ApplicationWindow):
 
         # Load saved custom audios
         for name, uri in Settings.get().custom_audios.items():
-            # Check if file actually exists
-            path = unquote(urlparse(uri).path)
-            exists = os.path.exists(path)
+            # Check if file actually exists. Going through Gio handles
+            # file:///C:/ URIs, which have no plain path equivalent.
+            path = Gio.File.new_for_uri(uri).get_path()
+            exists = path is not None and os.path.exists(path)
 
             # Create a new Sound
             sound = Sound(
@@ -186,6 +187,16 @@ class BlanketWindow(Adw.ApplicationWindow):
             "MP3": ["audio/mpeg"],
             "AAC": ["audio/aac"],
         }
+        # Windows has no MIME types, and GTK falls back from the native file
+        # dialog to its own when a filter uses them
+        suffixes = {
+            "audio/ogg": ["ogg", "oga", "opus"],
+            "audio/flac": ["flac"],
+            "audio/x-wav": ["wav"],
+            "audio/wav": ["wav"],
+            "audio/mpeg": ["mp3"],
+            "audio/aac": ["aac", "m4a"],
+        }
 
         self.filechooser = Gtk.FileDialog.new()
         self.filechooser.set_title(_("Open audio"))
@@ -195,8 +206,12 @@ class BlanketWindow(Adw.ApplicationWindow):
         for f, mts in filters.items():
             audio_filter = Gtk.FileFilter()
             audio_filter.set_name(f)
-            for mt in mts:
-                audio_filter.add_mime_type(mt)
+            if IS_WINDOWS:
+                for suffix in dict.fromkeys(s for mt in mts for s in suffixes[mt]):
+                    audio_filter.add_suffix(suffix)
+            else:
+                for mt in mts:
+                    audio_filter.add_mime_type(mt)
             filter_store.append(audio_filter)
 
         self.filechooser.set_filters(filter_store)
